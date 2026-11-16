@@ -1,6 +1,9 @@
 {
   "_note": "All values are fake. The AWS key is AWS's documented example key and the card is a standard test number.",
-  "requesting_user": { "id": "user_482", "tenant": "acme" },
+  "requesting_user": {
+    "id": "user_482",
+    "tenant": "acme"
+  },
   "canary": "CANARY-7f3a91",
   "context_parts": [
     {

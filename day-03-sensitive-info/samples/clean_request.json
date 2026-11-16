@@ -1,0 +1,32 @@
+{
+  "_note": "The same request after the fixes: credential moved to a secrets manager, other tenant's doc filtered out, tool result trimmed.",
+  "requesting_user": {
+    "id": "user_482",
+    "tenant": "acme"
+  },
+  "canary": "CANARY-7f3a91",
+  "context_parts": [
+    {
+      "source": "system",
+      "name": "system_prompt",
+      "content": "You are HelpBot for Acme. [CANARY-7f3a91] Use the billing tool when a customer asks about charges. Escalate refund requests to a human agent."
+    },
+    {
+      "source": "rag",
+      "name": "kb/refund-policy.md",
+      "owner_tenant": "acme",
+      "content": "Refunds are processed within 5 business days. Contact support through the help center."
+    },
+    {
+      "source": "tool",
+      "name": "lookup_order",
+      "content": "Order 1043 shipped on Nov 12. Carrier: UPS. Status: in transit."
+    },
+    {
+      "source": "history",
+      "name": "chat_history",
+      "content": "User: hi, where is my order 1043?"
+    }
+  ],
+  "model_response": "Your order 1043 shipped on Nov 12 with UPS and is in transit."
+}

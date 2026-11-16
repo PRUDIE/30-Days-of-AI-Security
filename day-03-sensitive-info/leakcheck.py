@@ -1,138 +1,201 @@
 #!/usr/bin/env python3
+"""leakcheck: pre-flight scanner for an LLM request's context window.
+
+Run it on everything an app has assembled for one model call (system prompt,
+retrieved documents, tool results, chat history) before the call is made.
+It reports:
+
+    SECRET  credentials and keys
+    PII     personal data
+    ACCESS  retrieved documents owned by a different tenant than the requester
+    CANARY  a canary token from the system prompt appearing in the model response
+
+Findings are masked in all output. Exit codes: 0 clean, 1 findings, 2 bad input.
+
+Standard library only. Python 3.9+.
 """
-leakcheck.py - Day 3 of 30 Days of Building in AI Security
 
-A pre-flight check for the context window. Before an AI app sends a prompt to
-the model, run everything it assembled (system prompt, retrieved docs, tool
-results, chat history) through this script and ask three questions:
-
-  1. Are there secrets in here?             (API keys, passwords, private keys)
-  2. Is there personal data in here?        (emails, phone numbers, card numbers)
-  3. Does this user own everything in here? (cross-user / cross-tenant leaks)
-
-It can also check a model response for a canary token planted in the system
-prompt, which tells you the system prompt (hidden context) leaked.
-
-No dependencies. No model calls. Standard library only.
-
-Usage:
-  python3 leakcheck.py sample_context.json
-  python3 leakcheck.py sample_context.json --redact    # also print the safe version
-"""
+from __future__ import annotations
 
 import argparse
 import json
 import re
 import sys
+from dataclasses import asdict, dataclass
+from typing import Iterable
 
-# --- 1. Secret patterns -------------------------------------------------------
-SECRET_PATTERNS = {
-    "AWS access key ID": re.compile(r"\b(AKIA|ASIA)[0-9A-Z]{16}\b"),
-    "Generic API key (sk-...)": re.compile(r"\bsk-[A-Za-z0-9_-]{16,}\b"),
+__version__ = "0.2.0"
+
+EXIT_CLEAN, EXIT_FINDINGS, EXIT_BAD_INPUT = 0, 1, 2
+
+SECRET_PATTERNS: dict[str, re.Pattern[str]] = {
+    "AWS access key ID": re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),
+    "API key (sk- prefix)": re.compile(r"\bsk-[A-Za-z0-9_-]{16,}\b"),
     "GitHub token": re.compile(r"\bgh[pousr]_[A-Za-z0-9]{36,}\b"),
-    "JWT": re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"),
+    "JWT": re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"),
     "Private key block": re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
-    "Password in connection string": re.compile(r"\b[a-z]+://[^\s:/@]+:[^\s@]+@[^\s]+", re.I),
-    "Password assignment": re.compile(r"\b(password|passwd|pwd|secret)\s*[:=]\s*\S+", re.I),
+    "Password in connection string": re.compile(r"\b[a-z][a-z0-9+.-]*://[^\s:/@]+:[^\s@]+@\S+", re.I),
+    "Password assignment": re.compile(r"\b(?:password|passwd|pwd|secret)\s*[:=]\s*\S+", re.I),
 }
 
-# --- 2. PII patterns ----------------------------------------------------------
-PII_PATTERNS = {
-    "Email address": re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b"),
-    "Phone number": re.compile(r"(?<!\d)(\+?\d{1,3}[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}(?!\d)"),
+PII_PATTERNS: dict[str, re.Pattern[str]] = {
+    "Email address": re.compile(r"\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b"),
+    # Separators are required so order numbers and IDs don't match.
+    "Phone number": re.compile(r"(?<![\w+])(?:\+\d{1,3}[ .-]?)?(?:\(\d{3}\)|\d{3})[ .-]\d{3}[ .-]\d{4}(?!\w)"),
     "US SSN": re.compile(r"\b\d{3}-\d{2}-\d{4}\b"),
-    "Card number": re.compile(r"\b(?:\d[ -]?){13,19}\b"),
+    "Card number": re.compile(r"\b\d(?:[ -]?\d){12,18}\b"),
 }
 
 
-def luhn_ok(number: str) -> bool:
-    """Card numbers pass the Luhn checksum. Cuts down false positives."""
+@dataclass(frozen=True)
+class Finding:
+    kind: str       # SECRET | PII | ACCESS | CANARY
+    label: str      # what was found
+    location: str   # which part of the request
+    preview: str    # masked value, never the full thing
+
+
+class InputError(ValueError):
+    """The request file is missing or malformed."""
+
+
+def luhn_valid(number: str) -> bool:
     digits = [int(d) for d in re.sub(r"\D", "", number)]
     if not 13 <= len(digits) <= 19:
         return False
-    total = 0
+    checksum = 0
     for i, d in enumerate(reversed(digits)):
-        if i % 2 == 1:
-            d *= 2
-            if d > 9:
-                d -= 9
-        total += d
-    return total % 10 == 0
+        if i % 2:
+            d = d * 2 - 9 if d > 4 else d * 2
+        checksum += d
+    return checksum % 10 == 0
 
 
-def mask(value: str) -> str:
-    """Show just enough to recognize the finding, never the whole secret."""
+def mask(value: str, keep: int = 4) -> str:
     value = value.strip()
-    return value[:4] + "****" if len(value) > 8 else "****"
+    return value[:keep] + "****" if len(value) > keep * 2 else "****"
 
 
-def scan_text(text: str):
-    findings = []
+def _matches(text: str) -> Iterable[tuple[str, str, re.Match[str]]]:
     for label, pattern in SECRET_PATTERNS.items():
         for m in pattern.finditer(text):
-            findings.append(("SECRET", label, m.group(0)))
+            yield "SECRET", label, m
     for label, pattern in PII_PATTERNS.items():
         for m in pattern.finditer(text):
-            if label == "Card number" and not luhn_ok(m.group(0)):
+            if label == "Card number" and not luhn_valid(m.group()):
                 continue
-            findings.append(("PII", label, m.group(0)))
-    return findings
+            yield "PII", label, m
+
+
+def scan_text(text: str, location: str) -> list[Finding]:
+    return [Finding(kind, label, location, mask(m.group())) for kind, label, m in _matches(text)]
 
 
 def redact(text: str) -> str:
-    for label, pattern in {**SECRET_PATTERNS, **PII_PATTERNS}.items():
-        tag = "[REDACTED:" + label.upper().replace(" ", "_") + "]"
-        if label == "Card number":
-            text = pattern.sub(lambda m: tag if luhn_ok(m.group(0)) else m.group(0), text)
-        else:
-            text = pattern.sub(tag, text)
+    """Replace every finding with a [REDACTED:LABEL] tag, right to left so offsets stay valid."""
+    spans = sorted(((m.start(), m.end(), label) for _, label, m in _matches(text)), reverse=True)
+    last_start = len(text) + 1
+    for start, end, label in spans:
+        if end > last_start:  # overlaps a span already replaced
+            continue
+        tag = "[REDACTED:" + re.sub(r"\W+", "_", label).strip("_").upper() + "]"
+        text = text[:start] + tag + text[end:]
+        last_start = start
     return text
 
 
-def main():
-    ap = argparse.ArgumentParser(description="Scan an assembled context window for leaks.")
-    ap.add_argument("context_file", help="JSON file describing the request (see sample_context.json)")
-    ap.add_argument("--redact", action="store_true", help="print a redacted copy of each part")
-    args = ap.parse_args()
+def load_request(path: str) -> dict:
+    try:
+        with open(path, encoding="utf-8") as f:
+            req = json.load(f)
+    except FileNotFoundError:
+        raise InputError(f"file not found: {path}")
+    except json.JSONDecodeError as e:
+        raise InputError(f"{path} is not valid JSON (line {e.lineno}): {e.msg}")
 
-    with open(args.context_file) as f:
-        ctx = json.load(f)
+    user = req.get("requesting_user")
+    if not isinstance(user, dict) or not {"id", "tenant"} <= user.keys():
+        raise InputError("'requesting_user' must be an object with 'id' and 'tenant'")
+    parts = req.get("context_parts")
+    if not isinstance(parts, list) or not parts:
+        raise InputError("'context_parts' must be a non-empty list")
+    for i, part in enumerate(parts):
+        missing = {"source", "name", "content"} - set(part)
+        if missing:
+            raise InputError(f"context_parts[{i}] is missing: {', '.join(sorted(missing))}")
+    return req
 
-    user = ctx["requesting_user"]
-    canary = ctx.get("canary")
-    parts = ctx["context_parts"]
-    total = 0
 
+def check_request(req: dict) -> list[Finding]:
+    tenant = req["requesting_user"]["tenant"]
+    findings: list[Finding] = []
+
+    for part in req["context_parts"]:
+        location = f"{part['source']}:{part['name']}"
+        findings += scan_text(part["content"], location)
+        owner = part.get("owner_tenant")
+        if owner and owner != tenant:
+            findings.append(Finding("ACCESS", f"owned by tenant '{owner}', requester is '{tenant}'",
+                                    location, "drop before sending"))
+
+    canary, response = req.get("canary"), req.get("model_response")
+    if canary and response and canary in response:
+        findings.append(Finding("CANARY", "system prompt canary found in response",
+                                "output:model_response", mask(canary)))
+    return findings
+
+
+def print_report(req: dict, findings: list[Finding], show_redacted: bool) -> None:
+    user = req["requesting_user"]
     print(f"Requesting user: {user['id']} (tenant: {user['tenant']})\n")
 
-    for part in parts:
-        name, text = part["name"], part["content"]
-        issues = [(kind, label, mask(val)) for kind, label, val in scan_text(text)]
+    by_location: dict[str, list[Finding]] = {}
+    for f in findings:
+        by_location.setdefault(f.location, []).append(f)
 
-        # --- 3. Ownership check: retrieved docs must belong to this user's tenant
-        owner = part.get("owner_tenant")
-        if owner and owner != user["tenant"]:
-            issues.append(("ACCESS", f"Belongs to tenant '{owner}', not '{user['tenant']}'", "drop this doc"))
+    locations = [f"{p['source']}:{p['name']}" for p in req["context_parts"]]
+    if "output:model_response" in by_location:
+        locations.append("output:model_response")
 
-        status = "OK" if not issues else f"{len(issues)} issue(s)"
-        print(f"[{part['source']}] {name}: {status}")
-        for kind, label, detail in issues:
-            print(f"    {kind:<7} {label}: {detail}")
-        if args.redact and issues:
-            print("    redacted ->", redact(text)[:160].replace("\n", " "))
-        total += len(issues)
+    for loc in locations:
+        items = by_location.get(loc, [])
+        source, _, name = loc.partition(":")
+        print(f"[{source}] {name}: {'OK' if not items else f'{len(items)} issue(s)'}")
+        for f in items:
+            print(f"    {f.kind:<7} {f.label}: {f.preview}")
+        if show_redacted and items and source != "output":
+            part = next(p for p in req["context_parts"] if f"{p['source']}:{p['name']}" == loc)
+            print(f"    redacted: {redact(part['content'])}")
 
-    # --- Canary check on the model's response (hidden context exposure)
-    response = ctx.get("model_response")
-    if canary and response is not None:
-        leaked = canary in response
-        print(f"\n[output] model_response: {'CANARY FOUND - system prompt leaked' if leaked else 'no canary'}")
-        total += int(leaked)
+    print(f"\nTotal issues: {len(findings)}")
+    print("Verdict:", "BLOCK - fix before this goes to the model" if findings else "PASS")
 
-    print(f"\nTotal issues: {total}")
-    print("Verdict:", "BLOCK - fix before this goes to the model" if total else "PASS")
-    sys.exit(1 if total else 0)
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="leakcheck",
+        description="Scan an assembled LLM request for secrets, PII and cross-tenant data.",
+    )
+    parser.add_argument("request", help="request file (JSON, see samples/)")
+    parser.add_argument("--redact", action="store_true", help="show a redacted copy of each flagged part")
+    parser.add_argument("--json", action="store_true", help="machine-readable output")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    args = parser.parse_args(argv)
+
+    try:
+        req = load_request(args.request)
+    except InputError as e:
+        print(f"leakcheck: {e}", file=sys.stderr)
+        return EXIT_BAD_INPUT
+
+    findings = check_request(req)
+    if args.json:
+        print(json.dumps({"verdict": "block" if findings else "pass",
+                          "findings": [asdict(f) for f in findings]}, indent=2))
+    else:
+        print_report(req, findings, args.redact)
+    return EXIT_FINDINGS if findings else EXIT_CLEAN
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
