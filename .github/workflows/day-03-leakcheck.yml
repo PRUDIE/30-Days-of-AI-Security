@@ -1,0 +1,42 @@
+name: day-03 leakcheck
+
+on:
+  push:
+    paths:
+      - "day-03-sensitive-info/**"
+      - ".github/workflows/day-03-leakcheck.yml"
+  pull_request:
+    paths:
+      - "day-03-sensitive-info/**"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.11", "3.13"]
+    defaults:
+      run:
+        working-directory: day-03-sensitive-info
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Clean sample passes (exit 0)
+        run: python leakcheck.py samples/clean_request.json
+
+      - name: Leaky sample is blocked (exit 1)
+        run: |
+          set +e
+          python leakcheck.py samples/leaky_request.json
+          code=$?
+          set -e
+          test "$code" -eq 1
