@@ -12,7 +12,7 @@ It reports:
 
 Findings are masked in all output. Exit codes: 0 clean, 1 findings, 2 bad input.
 
-Standard library only. Python 3.9+.
+Standard library only. Python 3.10+.
 """
 
 from __future__ import annotations

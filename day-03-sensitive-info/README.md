@@ -20,7 +20,7 @@ It also checks the model's response for a canary token planted in the system pro
 
 ## Quick start
 
-Python 3.9+, standard library only.
+Python 3.10+, standard library only.
 
 ```bash
 cd day-03-sensitive-info
@@ -139,7 +139,7 @@ Each finding is a `Finding(kind, label, location, preview)`, where `preview` is 
 python3 -m unittest discover -s tests -v
 ```
 
-21 tests cover detection, known false positives, redaction, tenant and canary checks, exit codes, and masking. CI runs them on Python 3.9, 3.11 and 3.13.
+21 tests cover detection, known false positives, redaction, tenant and canary checks, exit codes, and masking. CI runs them on Python 3.10, 3.12 and 3.13.
 
 ## Layout
 
