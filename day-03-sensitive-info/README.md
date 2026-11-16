@@ -2,7 +2,7 @@
 
 *Prompt injection is how attackers get in. Today is about what they walk out with.*
 
-Originally published on [CyberwithP](https://cyberwithprudie.substack.com), Nov 13, 2026.
+Originally published on [CyberwithP](https://cyberwithprudie.substack.com/p/day-3-what-ai-systems-leak-sensitive), Nov 13, 2026.
 
 **OWASP mapping:** LLM02:2026 Sensitive Information Disclosure, and LLM08:2026 Hidden Context Exposure (formerly LLM07:2025 System Prompt Leakage)
 
