@@ -34,3 +34,7 @@ day-03-sensitive-info/
 ## Disclaimer
 
 Everything here is for learning. Any testing is done only on systems I own or am explicitly allowed to test.
+
+## License
+
+Code in this repo is released under the [MIT License](LICENSE).
