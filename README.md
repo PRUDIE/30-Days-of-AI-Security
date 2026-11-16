@@ -16,6 +16,7 @@ Write-ups live on my Substack, [CyberwithP](https://cyberwithprudie.substack.com
 |-----|-------|-------|----------|
 | 01 | AI architecture fundamentals | [Architecture + trust-boundary diagram](day-01-architecture/) | [Day 1: Documenting my AI Security Journey](https://cyberwithprudie.substack.com/p/day-1-documenting-my-ai-security) |
 | 02 | Prompt injection | Coming soon | |
+| 03 | Sensitive information disclosure | [Context-window leak checker](day-03-sensitive-info/) | [Day 3: What AI Systems Leak](https://cyberwithprudie.substack.com) |
 
 ## Repo layout
 
@@ -23,6 +24,10 @@ Write-ups live on my Substack, [CyberwithP](https://cyberwithprudie.substack.com
 day-01-architecture/
   README.md     the Day 1 write-up
   diagram.png   architecture diagram with 6 trust boundaries
+day-03-sensitive-info/
+  README.md            the Day 3 write-up + how to run the build
+  leakcheck.py         pre-flight scanner for secrets, PII and cross-tenant docs
+  sample_context.json  fake request with planted leaks
 ```
 
 ## Disclaimer
