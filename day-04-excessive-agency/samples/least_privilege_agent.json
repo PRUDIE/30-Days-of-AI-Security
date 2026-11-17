@@ -1,0 +1,33 @@
+{
+  "agent": "support-assistant",
+  "purpose": "Help the signed-in customer check order status, cancel an order that hasn't shipped, and refund small amounts on their own orders.",
+  "needs": [
+    { "capability": "orders.read",    "scope": "own" },
+    { "capability": "orders.cancel",  "scope": "own" },
+    { "capability": "refunds.create", "scope": "own", "max_amount": 100 }
+  ],
+  "max_steps": 8,
+  "tools": [
+    {
+      "name": "lookup_order",
+      "description": "Get status and items for one order.",
+      "grants": [{ "capability": "orders.read", "scope": "own" }],
+      "credential": "user",
+      "approval": "none"
+    },
+    {
+      "name": "cancel_order",
+      "description": "Cancel an order that hasn't shipped. The customer confirms in the UI first.",
+      "grants": [{ "capability": "orders.cancel", "scope": "own" }],
+      "credential": "user",
+      "approval": "human"
+    },
+    {
+      "name": "issue_refund",
+      "description": "Refund up to 100 on the customer's own order. The payments API rejects anything larger.",
+      "grants": [{ "capability": "refunds.create", "scope": "own", "max_amount": 100 }],
+      "credential": "user",
+      "approval": "none"
+    }
+  ]
+}

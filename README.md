@@ -17,6 +17,7 @@ Write-ups live on my Substack, [CyberwithP](https://cyberwithprudie.substack.com
 | 01 | AI architecture fundamentals | [Architecture + trust-boundary diagram](day-01-architecture/) | [Day 1: Documenting my AI Security Journey](https://cyberwithprudie.substack.com/p/day-1-documenting-my-ai-security) |
 | 02 | Prompt injection | Coming soon | |
 | 03 | Sensitive information disclosure | [leakcheck: context-window leak scanner](day-03-sensitive-info/) | [Day 3: What AI Systems Leak](https://cyberwithprudie.substack.com/p/day-3-what-ai-systems-leak-sensitive) |
+| 04 | Excessive agency | [agencycheck: agent permission audit + tool-call gate](day-04-excessive-agency/) | [Day 4: When Your AI Agent Does Too Much](https://cyberwithprudie.substack.com/p/day-4-when-your-ai-agent-does-too) |
 
 ## Repo layout
 
@@ -29,6 +30,11 @@ day-03-sensitive-info/
   leakcheck.py   pre-flight scanner for secrets, PII and cross-tenant docs
   samples/       a leaky request and the same request after the fixes
   tests/         unit tests (run in CI)
+day-04-excessive-agency/
+  README.md       agencycheck docs
+  agencycheck.py  audits an agent's tools for excessive agency, and gates its tool calls at runtime
+  samples/        an over-privileged agent, the least-privilege fix, and a prompt-injected session
+  tests/          unit tests (run in CI)
 ```
 
 ## Disclaimer

@@ -1,0 +1,50 @@
+name: day-04 agencycheck
+
+on:
+  push:
+    paths:
+      - "day-04-excessive-agency/**"
+      - ".github/workflows/day-04-agencycheck.yml"
+  pull_request:
+    paths:
+      - "day-04-excessive-agency/**"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12", "3.13"]
+    defaults:
+      run:
+        working-directory: day-04-excessive-agency
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Least-privilege manifest passes (exit 0)
+        run: python agencycheck.py audit samples/least_privilege_agent.json
+
+      - name: Over-privileged manifest is flagged (exit 1)
+        run: |
+          set +e
+          python agencycheck.py audit samples/overprivileged_agent.json
+          code=$?
+          set -e
+          test "$code" -eq 1
+
+      - name: Injected tool calls are denied (exit 1)
+        run: |
+          set +e
+          python agencycheck.py replay samples/least_privilege_agent.json samples/injected_session.json
+          code=$?
+          set -e
+          test "$code" -eq 1

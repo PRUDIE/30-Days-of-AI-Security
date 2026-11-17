@@ -1,0 +1,51 @@
+{
+  "agent": "support-assistant",
+  "purpose": "Help the signed-in customer check order status, cancel an order that hasn't shipped, and refund small amounts on their own orders.",
+  "needs": [
+    { "capability": "orders.read",    "scope": "own" },
+    { "capability": "orders.cancel",  "scope": "own" },
+    { "capability": "refunds.create", "scope": "own", "max_amount": 100 }
+  ],
+  "tools": [
+    {
+      "name": "lookup_order",
+      "description": "Get status and items for one order.",
+      "grants": [{ "capability": "orders.read", "scope": "own" }],
+      "credential": "user",
+      "approval": "none"
+    },
+    {
+      "name": "run_sql",
+      "description": "Run any SQL query against the production database. Added during the prototype 'so the agent can answer anything'.",
+      "open_ended": true,
+      "grants": [
+        { "capability": "orders.read",    "scope": "all" },
+        { "capability": "orders.update",  "scope": "all" },
+        { "capability": "customers.read", "scope": "all" }
+      ],
+      "credential": "service",
+      "approval": "none"
+    },
+    {
+      "name": "cancel_order",
+      "description": "Cancel an order that hasn't shipped.",
+      "grants": [{ "capability": "orders.cancel", "scope": "own" }],
+      "credential": "user",
+      "approval": "none"
+    },
+    {
+      "name": "issue_refund",
+      "description": "Refund an order through the payments API.",
+      "grants": [{ "capability": "refunds.create", "scope": "own" }],
+      "credential": "service",
+      "approval": "none"
+    },
+    {
+      "name": "send_email",
+      "description": "Send an email from support@ to any address.",
+      "grants": [{ "capability": "email.send", "scope": "all" }],
+      "credential": "service",
+      "approval": "none"
+    }
+  ]
+}
